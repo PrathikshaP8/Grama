@@ -1,0 +1,99 @@
+{
+  "brand": "GramCare AI",
+  "tagline": "Rural health — voice first",
+  "subtitle": "A digital health identity for every resident — before illness strikes",
+  "login": {
+    "patient": "Patient login",
+    "staff": "Staff login",
+    "name": "Full name",
+    "aadhaar": "Aadhaar number",
+    "email": "Email",
+    "password": "Password",
+    "otp": "Enter OTP",
+    "sendOtp": "Send OTP",
+    "verify": "Verify",
+    "roleAsha": "ASHA worker",
+    "roleHospital": "Hospital staff",
+    "demoNote": "Aadhaar verification is a demo/hackathon simulation — not UIDAI integration",
+    "otpHint": "Demo OTP (dev): {{otp}}"
+  },
+  "nav": {
+    "home": "Home",
+    "voice": "Voice assistant",
+    "manual": "Manual",
+    "hospitals": "Hospitals",
+    "history": "Medical history",
+    "profile": "Profile",
+    "ar": "Symptom photo",
+    "logout": "Log out",
+    "register": "Register",
+    "coverage": "Coverage",
+    "doctors": "Doctors",
+    "scan": "Scan QR",
+    "analytics": "Analytics"
+  },
+  "patient": {
+    "welcome": "Hello, {{name}}",
+    "yourId": "Your health ID",
+    "choose": "How would you like to continue?",
+    "voiceCta": "Talk to the voice assistant",
+    "manualCta": "Navigate with menus",
+    "bloodGroup": "Blood group",
+    "aadhaarEnding": "Aadhaar ending {{last4}}",
+    "disclaimer": "This is not a medical diagnosis. Seek emergency care immediately if needed."
+  },
+  "asha": {
+    "title": "ASHA dashboard",
+    "coverage": "{{registered}} of {{estimated}} households registered",
+    "registerResident": "Register resident",
+    "fullName": "Full name",
+    "phone": "Phone",
+    "bloodGroup": "Blood group",
+    "address": "Address",
+    "city": "City / town",
+    "village": "Village",
+    "baseline": "Baseline medical history",
+    "conditions": "Known conditions",
+    "medications": "Current medications",
+    "bp": "Blood pressure",
+    "sugar": "Blood sugar",
+    "save": "Save & generate QR",
+    "success": "Registered — ID: {{id}}"
+  },
+  "hospital": {
+    "title": "Hospital dashboard",
+    "availability": "Today's doctor availability",
+    "scanQr": "Scan patient QR",
+    "available": "Available",
+    "not_available": "Not available",
+    "on_leave": "On leave",
+    "in_procedure": "In procedure"
+  },
+  "facilities": {
+    "title": "Nearby hospitals",
+    "all": "All",
+    "government": "Government",
+    "private": "Private",
+    "recommend": "Best-match recommendation",
+    "specialty": "Specialty",
+    "distance": "{{km}} km",
+    "why": "Why: {{reason}}",
+    "book": "Book appointment",
+    "confirmPrompt": "Confirm to book (yes / ಹೌದು)"
+  },
+  "voice": {
+    "title": "Voice assistant",
+    "start": "Start talking",
+    "stop": "Stop",
+    "listening": "Listening…",
+    "fallback": "Mic unavailable — type symptoms",
+    "send": "Send",
+    "urgency": "Urgency: {{band}}"
+  },
+  "common": {
+    "loading": "Loading…",
+    "error": "Something went wrong",
+    "back": "Back",
+    "language": "Language"
+  }
+}

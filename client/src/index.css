@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+@theme {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Source Sans 3", "Noto Sans Kannada", system-ui, sans-serif;
+  --color-forest-950: #0a1f18;
+  --color-forest-900: #0f2e24;
+  --color-forest-800: #1a5c45;
+  --color-forest-700: #227556;
+  --color-forest-600: #2d8a68;
+  --color-forest-500: #3aa57c;
+  --color-leaf-100: #e8f5ef;
+  --color-leaf-50: #f3faf6;
+  --color-sand-100: #f0ebe3;
+  --color-clay-600: #c45c26;
+  --color-clay-500: #d9773a;
+  --color-ink: #14201b;
+  --color-muted: #5a6b63;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-forest-900);
+  }
+  body {
+    min-height: 100dvh;
+    margin: 0;
+  }
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+@layer utilities {
+  .bg-atmosphere {
+    background:
+      radial-gradient(ellipse 80% 60% at 20% 10%, rgba(58, 165, 124, 0.28), transparent 55%),
+      radial-gradient(ellipse 70% 50% at 90% 80%, rgba(196, 92, 38, 0.12), transparent 50%),
+      linear-gradient(165deg, #0f2e24 0%, #1a5c45 42%, #0a1f18 100%);
+  }
+  .bg-panel {
+    background:
+      linear-gradient(180deg, rgba(243, 250, 246, 0.97), rgba(232, 245, 239, 0.95));
+  }
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}
