@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, useCallback, type ReactNode } from 'react';
 import { api, setToken } from '../services/api';
+import { connectRealtime, disconnectRealtime } from '../services/realtime';
 
 export type Role = 'asha' | 'hospital' | 'patient';
 
@@ -39,6 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (u) localStorage.setItem('gramcare-user', JSON.stringify(u));
     else localStorage.removeItem('gramcare-user');
     if (accessToken !== undefined) setToken(accessToken || null);
+    if (u && accessToken) connectRealtime();
+    else if (!u) disconnectRealtime();
   }, []);
 
   const loginStaff = useCallback(async (email: string, password: string, role: 'asha' | 'hospital') => {

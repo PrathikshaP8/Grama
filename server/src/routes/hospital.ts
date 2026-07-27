@@ -2,19 +2,19 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Doctor } from '../models/Doctor.js';
 import { DoctorAvailability } from '../models/DoctorAvailability.js';
+import { AppointmentSlot } from '../models/AppointmentSlot.js';
+import { Appointment } from '../models/Appointment.js';
 import { Patient } from '../models/Patient.js';
 import { MedicalHistoryEntry } from '../models/MedicalHistoryEntry.js';
 import { Facility } from '../models/Facility.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { appendAudit } from '../services/audit.js';
+import { emitEvent } from '../realtime/io.js';
+import { todayIso } from '../services/geo.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('hospital'));
-
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10);
-}
 
 router.get('/facility', async (req, res) => {
   const facility = await Facility.findById(req.user!.facilityId);
@@ -28,6 +28,7 @@ router.get('/doctors', async (req, res) => {
   const rows = await Promise.all(
     doctors.map(async (d) => {
       const avail = await DoctorAvailability.findOne({ doctorId: d._id, date });
+      const slots = await AppointmentSlot.find({ doctorId: d._id, date }).sort({ time: 1 });
       return {
         id: d.id,
         name: d.name,
@@ -35,6 +36,13 @@ router.get('/doctors', async (req, res) => {
         position: d.position,
         status: avail?.status ?? 'available',
         date,
+        slots: slots.map((s) => ({
+          id: s.id,
+          time: s.time,
+          status: s.status,
+          appointmentId: s.appointmentId,
+        })),
+        openSlotCount: slots.filter((s) => s.status === 'open').length,
       };
     })
   );
@@ -76,7 +84,145 @@ router.patch('/doctors/:doctorId/availability', validateBody(statusSchema), asyn
     metadata: { doctorId: doctor.id, status: body.status, date },
   });
 
-  res.json({ availability: avail });
+  const facility = await Facility.findById(doctor.facilityId).select('name');
+  const payload = {
+    doctorId: doctor.id,
+    doctorName: doctor.name,
+    specialty: doctor.specialty,
+    facilityId: doctor.facilityId.toString(),
+    facilityName: facility?.name,
+    status: body.status,
+    date,
+    updatedAt: new Date().toISOString(),
+  };
+
+  emitEvent('doctor:availability_changed', payload, [
+    `facility:${doctor.facilityId}`,
+    `role:patient`,
+    `role:asha`,
+    `role:hospital`,
+    `specialty:${doctor.specialty.toLowerCase()}`,
+  ]);
+
+  res.json({ availability: avail, doctor: payload });
+});
+
+const slotsSchema = z.object({
+  date: z.string().optional(),
+  times: z.array(z.string().regex(/^\d{2}:\d{2}$/)).min(1),
+});
+
+/** Replace/create open slots for a doctor on a date (does not wipe booked slots). */
+router.put('/doctors/:doctorId/slots', validateBody(slotsSchema), async (req, res) => {
+  const body = req.body as z.infer<typeof slotsSchema>;
+  const date = body.date || todayIso();
+  const doctor = await Doctor.findOne({ _id: req.params.doctorId, facilityId: req.user!.facilityId });
+  if (!doctor) {
+    res.status(404).json({ error: 'Doctor not found at your facility' });
+    return;
+  }
+
+  const created = [];
+  for (const time of body.times) {
+    const existing = await AppointmentSlot.findOne({ doctorId: doctor._id, date, time });
+    if (existing) {
+      if (existing.status === 'blocked') {
+        existing.status = 'open';
+        await existing.save();
+        created.push(existing);
+      }
+      continue;
+    }
+    created.push(
+      await AppointmentSlot.create({
+        doctorId: doctor._id,
+        facilityId: doctor.facilityId,
+        date,
+        time,
+        status: 'open',
+      })
+    );
+  }
+
+  emitEvent(
+    'slot:updated',
+    {
+      doctorId: doctor.id,
+      facilityId: doctor.facilityId.toString(),
+      date,
+      action: 'slots_upserted',
+    },
+    [`facility:${doctor.facilityId}`, `role:patient`, `specialty:${doctor.specialty.toLowerCase()}`]
+  );
+
+  const slots = await AppointmentSlot.find({ doctorId: doctor._id, date }).sort({ time: 1 });
+  res.json({ slots });
+});
+
+router.get('/appointments', async (req, res) => {
+  const facilityId = req.user!.facilityId;
+  const appointments = await Appointment.find({ facilityId })
+    .populate('patientId', 'name uniqueId village')
+    .populate('doctorId', 'name specialty')
+    .sort({ createdAt: -1 })
+    .limit(50);
+  res.json({ appointments });
+});
+
+const apptStatusSchema = z.object({
+  status: z.enum(['pending', 'confirmed', 'cancelled', 'completed']),
+});
+
+router.patch('/appointments/:id', validateBody(apptStatusSchema), async (req, res) => {
+  const body = req.body as z.infer<typeof apptStatusSchema>;
+  const appt = await Appointment.findOne({ _id: req.params.id, facilityId: req.user!.facilityId });
+  if (!appt) {
+    res.status(404).json({ error: 'Appointment not found' });
+    return;
+  }
+
+  const prev = appt.status;
+  appt.status = body.status;
+  await appt.save();
+
+  if (body.status === 'cancelled' && appt.slotId) {
+    await AppointmentSlot.findOneAndUpdate(
+      { _id: appt.slotId, status: 'booked' },
+      { $set: { status: 'open' }, $unset: { appointmentId: 1, bookedBy: 1 } }
+    );
+    emitEvent(
+      'slot:updated',
+      {
+        slotId: appt.slotId.toString(),
+        facilityId: appt.facilityId.toString(),
+        doctorId: appt.doctorId?.toString(),
+        status: 'open',
+      },
+      [`facility:${appt.facilityId}`, `role:patient`]
+    );
+  }
+
+  await appendAudit({
+    actorId: req.user!.id,
+    actorRole: 'hospital',
+    action: 'appointment.update',
+    entityType: 'Appointment',
+    entityId: appt.id,
+    metadata: { from: prev, to: body.status },
+  });
+
+  emitEvent(
+    'appointment:updated',
+    {
+      appointmentId: appt.id,
+      facilityId: appt.facilityId.toString(),
+      patientId: appt.patientId.toString(),
+      status: body.status,
+    },
+    [`facility:${appt.facilityId}`, `user:${appt.patientId}`, `role:patient`, `role:hospital`]
+  );
+
+  res.json({ appointment: appt });
 });
 
 router.get('/scan/:uniqueId', async (req, res) => {
@@ -194,6 +340,12 @@ router.post('/visits', validateBody(visitSchema), async (req, res) => {
     entityId: patient.id,
     metadata: { uniqueId: patient.uniqueId },
   });
+
+  emitEvent(
+    'patient:updated',
+    { patientId: patient.id, uniqueId: patient.uniqueId, reason: 'visit' },
+    [`user:${patient.id}`, `role:patient`, `role:asha`]
+  );
 
   res.status(201).json({ entries });
 });

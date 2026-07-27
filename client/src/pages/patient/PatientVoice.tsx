@@ -33,10 +33,39 @@ export function PatientVoice() {
   const [urgency, setUrgency] = useState<UrgencyResult | null>(null);
   const [listening, setListening] = useState(false);
   const [facilityId, setFacilityId] = useState<string | null>(null);
+  const [doctorId, setDoctorId] = useState<string | null>(null);
+  const [slotId, setSlotId] = useState<string | null>(null);
   const [booked, setBooked] = useState(false);
   const [liveNote, setLiveNote] = useState('');
   const stopRef = useRef<(() => void) | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  async function loadLiveOffer() {
+    const avail = await api<{
+      spokenSummary: string;
+      facilities: Array<{
+        facilityId: string;
+        facilityName: string;
+        specialtyAvailable: boolean;
+        matchingDoctors: Array<{
+          doctorId: string;
+          name: string;
+          status: string;
+          openSlots: Array<{ id: string; time: string }>;
+        }>;
+      }>;
+    }>('/voice/availability?specialty=General%20Physician');
+    const best = avail.facilities.find((f) => f.specialtyAvailable);
+    if (best) {
+      setFacilityId(best.facilityId);
+      const doc = best.matchingDoctors.find((d) => d.status === 'available' && d.openSlots.length);
+      if (doc) {
+        setDoctorId(doc.doctorId);
+        setSlotId(doc.openSlots[0]?.id ?? null);
+      }
+    }
+    return avail;
+  }
 
   useEffect(() => {
     void api<VoiceConfig>('/voice/config').then((cfg) => {
@@ -118,18 +147,25 @@ export function PatientVoice() {
           }
           if (fc.name === 'confirmAction' && isAffirmative(String(fc.args.affirmativePhrase ?? ''))) {
             setPhase('book');
-            void api<{ facilities: Array<{ id: string }> }>('/facilities').then((r) => {
-              if (r.facilities[0]) setFacilityId(r.facilities[0].id);
-            });
+            void loadLiveOffer();
           }
-          if (fc.name === 'bookAppointment' && fc.args.facilityId) {
+          if (fc.name === 'bookAppointment' && fc.args.facilityId && fc.args.doctorId && fc.args.slotId) {
             setFacilityId(String(fc.args.facilityId));
+            setDoctorId(String(fc.args.doctorId));
+            setSlotId(String(fc.args.slotId));
             void confirmBook();
           }
         }
         if (turn.text || (turn.functionCalls && turn.functionCalls.length)) return;
       } catch {
         /* local fallback below */
+      }
+
+      // Availability questions — answer from live backend only
+      if (/available|doctor near|ಆಸ್ಪತ್ರೆ|ವೈದ್ಯ|ಲಭ್ಯ/i.test(text) && phase !== 'q1' && phase !== 'q2') {
+        const avail = await loadLiveOffer();
+        push('assistant', avail.spokenSummary);
+        return;
       }
 
       const kn = i18n.language === 'kn';
@@ -159,15 +195,14 @@ export function PatientVoice() {
             ? `ತುರ್ತು ಮಟ್ಟ: ${result.band}. ${result.reason} ${result.disclaimer}`
             : `Urgency: ${result.band}. ${result.reason} ${result.disclaimer}`
         );
+        const avail = await loadLiveOffer();
+        push('assistant', avail.spokenSummary);
         push(
           'assistant',
           kn
-            ? 'ಹತ್ತಿರದ ಆಸ್ಪತ್ರೆಗೆ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ಬುಕ್ ಮಾಡೋಣವೇ? ಹೌದು ಎಂದು ಹೇಳಿ.'
-            : 'Shall I book an appointment at a nearby facility? Say yes / ಹೌದು.'
+            ? 'ಈ ಆಸ್ಪತ್ರೆಗೆ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ಬುಕ್ ಮಾಡೋಣವೇ? ಹೌದು ಎಂದು ಹೇಳಿ.'
+            : 'Shall I book at this facility? Say yes / ಹೌದು.'
         );
-        void api<{ facilities: Array<{ id: string }> }>('/facilities').then((r) => {
-          if (r.facilities[0]) setFacilityId(r.facilities[0].id);
-        });
         setPhase('book');
         return;
       }
@@ -178,23 +213,35 @@ export function PatientVoice() {
   }
 
   async function confirmBook() {
-    if (!facilityId || !urgency) return;
-    await api('/appointments', {
-      method: 'POST',
-      body: JSON.stringify({
-        facilityId,
-        specialty: 'General Physician',
-        urgency: urgency.band,
-        symptoms: complaint,
-        bookedVia: 'voice',
-        confirmed: true,
-      }),
-    });
-    setBooked(true);
-    push(
-      'assistant',
-      i18n.language === 'kn' ? 'ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ದೃಢಪಟ್ಟಿದೆ.' : 'Appointment confirmed.'
-    );
+    if (!facilityId || !doctorId || !slotId || !urgency) {
+      push('assistant', 'No open slot available right now. Please try hospitals page.');
+      return;
+    }
+    try {
+      await api('/appointments', {
+        method: 'POST',
+        body: JSON.stringify({
+          facilityId,
+          doctorId,
+          slotId,
+          specialty: 'General Physician',
+          urgency: urgency.band,
+          symptoms: complaint,
+          bookedVia: 'voice',
+          confirmed: true,
+        }),
+      });
+      setBooked(true);
+      push(
+        'assistant',
+        i18n.language === 'kn'
+          ? 'ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್ ವಿನಂತಿ ಕಳುಹಿಸಲಾಗಿದೆ — ಆಸ್ಪತ್ರೆ ದೃಢಪಡಿಸಬೇಕು.'
+          : 'Appointment requested — hospital will confirm.'
+      );
+    } catch {
+      const avail = await loadLiveOffer();
+      push('assistant', `Slot may have been taken. ${avail.spokenSummary}`);
+    }
   }
 
   function onSubmit(e: FormEvent) {
@@ -250,7 +297,7 @@ export function PatientVoice() {
         </div>
       )}
 
-      {phase === 'book' && !booked && facilityId && (
+      {phase === 'book' && !booked && facilityId && doctorId && slotId && (
         <ConfirmGate onConfirm={() => void confirmBook()} />
       )}
       {booked && <p className="mt-3 text-leaf-100">✓ Booked</p>}

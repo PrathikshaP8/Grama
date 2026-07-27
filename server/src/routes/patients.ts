@@ -58,8 +58,23 @@ router.get('/me', requireAuth, requireRole('patient'), async (req, res) => {
     return;
   }
   const history = await MedicalHistoryEntry.find({ patientId: patient._id }).sort({ createdAt: -1 });
-  const appointments = await Appointment.find({ patientId: patient._id }).sort({ createdAt: -1 }).limit(20);
-  res.json({ patient, history, appointments });
+  const appointments = await Appointment.find({ patientId: patient._id })
+    .populate('facilityId', 'name type')
+    .populate('doctorId', 'name specialty')
+    .sort({ createdAt: -1 })
+    .limit(20);
+  res.json({
+    patient,
+    history,
+    appointments,
+    registeredLocation: {
+      village: patient.village,
+      city: patient.city,
+      address: patient.address,
+      lat: patient.lat,
+      lng: patient.lng,
+    },
+  });
 });
 
 export default router;

@@ -76,6 +76,33 @@ server/src/   models, routes, auth, uniqueId, QR, audit, recommend
 client/src/   i18n, dashboards (patient / asha / hospital), voice, AR stub
 ```
 
+## Live dashboard synchronization
+
+MongoDB is the single source of truth. After mutations, the Express server emits Socket.IO events; clients refetch.
+
+| Event | When | Rooms |
+|-------|------|-------|
+| `doctor:availability_changed` | Hospital patches doctor status | `role:patient`, `specialty:*`, facility |
+| `slot:updated` | Slot booked/freed/upserted | patients + facility |
+| `appointment:created` | Patient books | hospital + patient |
+| `appointment:updated` | Hospital confirms/cancels | hospital + patient |
+| `patient:updated` | ASHA register / hospital visit | asha/patient |
+
+**Registered location:** Recommendations default to the patient's ASHA-saved `village`/`city`/`lat`/`lng`. Temporary geolocation is opt-in only and never overwrites the permanent address.
+
+**Slot races:** `AppointmentSlot` is claimed with `findOneAndUpdate({ status: 'open' })` — concurrent bookings get `409 SLOT_TAKEN`.
+
+### Demo script (live sync)
+
+1. `npm run seed` then `npm run dev`
+2. Patient: Ramesh Kumar / `123456789012` → Hospitals → Recommend **General Physician**
+   - Expect **KMC** (farther, available) over **Belman PHC** (nearby, Dr. Priya unavailable)
+3. Hospital tab: `hospital@gramcare.in` → set **Dr. Priya Shetty** → Available
+4. Patient toast: “Doctor availability updated” → recommendation flips to **Belman PHC**
+5. Patient books an open slot → Hospital “Appointment requests” shows it → Confirm → Patient status **confirmed**
+
+See architecture notes in completion response for collections and APIs.
+
 ## Compliance notes
 
 - No disease diagnosis from AI — urgency bands only, with disclaimer
@@ -83,3 +110,4 @@ client/src/   i18n, dashboards (patient / asha / hospital), voice, AR stub
 - OTPs hashed, single-use, rate-limited
 - Audit log is hash-chained (tamper-evident), not a public blockchain
 - AR symptom capture is a framing + blur-reject stub for future vision models
+- Aadhaar is a demo hash simulation — not UIDAI integration

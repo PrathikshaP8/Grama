@@ -10,6 +10,8 @@ import { encryptField } from '../services/crypto.js';
 import { allocateUniqueId } from '../services/uniqueId.js';
 import { generateQrDataUrl } from '../services/qr.js';
 import { appendAudit } from '../services/audit.js';
+import { resolveRegisteredCoords } from '../services/geo.js';
+import { emitEvent } from '../realtime/io.js';
 
 const router = Router();
 router.use(requireAuth, requireRole('asha'));
@@ -91,6 +93,7 @@ router.post('/patients', validateBody(registerSchema), async (req, res) => {
   const { uniqueId } = await allocateUniqueId(city);
   const qrDataUrl = await generateQrDataUrl(uniqueId);
   const phoneDigits = body.phone.replace(/\D/g, '');
+  const geo = resolveRegisteredCoords(village, city);
 
   const patient = await Patient.create({
     uniqueId,
@@ -103,6 +106,8 @@ router.post('/patients', validateBody(registerSchema), async (req, res) => {
     address: body.address,
     village,
     city,
+    lat: geo.lat,
+    lng: geo.lng,
     registeredBy: asha._id,
     qrDataUrl,
   });
@@ -171,6 +176,11 @@ router.post('/patients', validateBody(registerSchema), async (req, res) => {
     metadata: { uniqueId },
   });
 
+  emitEvent('patient:updated', { patientId: patient.id, uniqueId, reason: 'register' }, [
+    `role:asha`,
+    `role:hospital`,
+  ]);
+
   res.status(201).json({
     patient: {
       id: patient.id,
@@ -182,6 +192,8 @@ router.post('/patients', validateBody(registerSchema), async (req, res) => {
       address: patient.address,
       village: patient.village,
       city: patient.city,
+      lat: patient.lat,
+      lng: patient.lng,
       qrDataUrl: patient.qrDataUrl,
     },
   });

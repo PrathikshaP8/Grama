@@ -11,6 +11,9 @@ export interface IPatient extends Document {
   address: string;
   village: string;
   city: string;
+  /** Permanent registered coordinates from ASHA registration — not overwritten by temporary overrides. */
+  lat?: number;
+  lng?: number;
   registeredBy: Types.ObjectId;
   qrDataUrl?: string;
 }
@@ -27,6 +30,8 @@ const patientSchema = new Schema<IPatient>(
     address: { type: String, required: true },
     village: { type: String, required: true, index: true },
     city: { type: String, required: true },
+    lat: { type: Number },
+    lng: { type: Number },
     registeredBy: { type: Schema.Types.ObjectId, ref: 'AshaWorker', required: true },
     qrDataUrl: { type: String },
   },

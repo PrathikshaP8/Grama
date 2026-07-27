@@ -8,11 +8,14 @@ import { Doctor } from '../models/Doctor.js';
 import { DoctorAvailability } from '../models/DoctorAvailability.js';
 import { Patient } from '../models/Patient.js';
 import { MedicalHistoryEntry } from '../models/MedicalHistoryEntry.js';
+import { AppointmentSlot } from '../models/AppointmentSlot.js';
+import { Appointment } from '../models/Appointment.js';
 import { hashAadhaar, aadhaarLast4 } from '../services/aadhaar.js';
 import { encryptField } from '../services/crypto.js';
 import { allocateUniqueId } from '../services/uniqueId.js';
 import { generateQrDataUrl } from '../services/qr.js';
 import { appendAudit } from '../services/audit.js';
+import { resolveRegisteredCoords } from '../services/geo.js';
 
 async function seed() {
   await connectDb();
@@ -24,6 +27,8 @@ async function seed() {
     Facility.deleteMany({}),
     Doctor.deleteMany({}),
     DoctorAvailability.deleteMany({}),
+    AppointmentSlot.deleteMany({}),
+    Appointment.deleteMany({}),
     Patient.deleteMany({}),
     MedicalHistoryEntry.deleteMany({}),
   ]);
@@ -130,15 +135,39 @@ async function seed() {
   );
 
   const today = new Date().toISOString().slice(0, 10);
+  // Demo: Belman PHC GP (index 0) starts UNAVAILABLE; KMC GP (index 3) AVAILABLE
+  // so nearby Hospital A loses to farther Hospital B until hospital flips status.
   await DoctorAvailability.insertMany(
     doctors.map((d, i) => ({
       doctorId: d._id,
       facilityId: d.facilityId,
       date: today,
-      status: i === 4 ? 'on_leave' : i === 2 ? 'in_procedure' : 'available',
+      status:
+        i === 0
+          ? 'not_available'
+          : i === 4
+            ? 'on_leave'
+            : i === 2
+              ? 'in_procedure'
+              : 'available',
       updatedBy: hospitalUser._id,
     }))
   );
+
+  const slotTimes = ['09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00'];
+  for (const d of doctors) {
+    for (const time of slotTimes) {
+      await AppointmentSlot.create({
+        doctorId: d._id,
+        facilityId: d.facilityId,
+        date: today,
+        time,
+        status: 'open',
+      });
+    }
+  }
+  console.log(`[seed] Belman GP Dr. Priya Shetty → not_available (demo Hospital A)`);
+  console.log(`[seed] KMC GP Dr. Meera Kamath → available (demo Hospital B farther)`);
 
   // Sample residents for demo login
   const samples = [
@@ -169,6 +198,7 @@ async function seed() {
   for (const s of samples) {
     const { uniqueId } = await allocateUniqueId('Mangalore');
     const qrDataUrl = await generateQrDataUrl(uniqueId);
+    const geo = resolveRegisteredCoords('Belman', 'Mangalore');
     const patient = await Patient.create({
       uniqueId,
       name: s.name,
@@ -180,6 +210,8 @@ async function seed() {
       address: s.address,
       village: 'Belman',
       city: 'Mangalore',
+      lat: geo.lat,
+      lng: geo.lng,
       registeredBy: asha._id,
       qrDataUrl,
     });
@@ -242,11 +274,16 @@ async function seed() {
 
 Staff logins (password: GramCare@2026):
   ASHA:     asha@gramcare.in
-  Hospital: hospital@gramcare.in
+  Hospital: hospital@gramcare.in  (Belman PHC — flip Dr. Priya to AVAILABLE for live demo)
 
 Patient demo (name + Aadhaar, OTP shown in API response in development):
-  Ramesh Kumar / 123456789012
+  Ramesh Kumar / 123456789012  (registered village: Belman)
   Savitha Bai  / 234567890123
+
+Live sync demo:
+  1) Patient recommends General Physician → KMC (farther, available) beats Belman PHC (nearby, unavailable)
+  2) Hospital sets Dr. Priya Shetty → available
+  3) Patient recommendation refreshes via Socket.IO → Belman PHC becomes best match
 
 NOTE: Aadhaar flow is a hackathon simulation (salted hash only). Not UIDAI-integrated.
 `);

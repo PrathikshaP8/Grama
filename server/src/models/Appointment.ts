@@ -7,6 +7,9 @@ export interface IAppointment extends Document {
   patientId: Types.ObjectId;
   facilityId: Types.ObjectId;
   doctorId?: Types.ObjectId;
+  slotId?: Types.ObjectId;
+  slotDate?: string;
+  slotTime?: string;
   specialty?: string;
   status: AppointmentStatus;
   urgency?: UrgencyBand;
@@ -21,6 +24,9 @@ const appointmentSchema = new Schema<IAppointment>(
     patientId: { type: Schema.Types.ObjectId, ref: 'Patient', required: true, index: true },
     facilityId: { type: Schema.Types.ObjectId, ref: 'Facility', required: true },
     doctorId: { type: Schema.Types.ObjectId, ref: 'Doctor' },
+    slotId: { type: Schema.Types.ObjectId, ref: 'AppointmentSlot' },
+    slotDate: { type: String },
+    slotTime: { type: String },
     specialty: { type: String },
     status: {
       type: String,
